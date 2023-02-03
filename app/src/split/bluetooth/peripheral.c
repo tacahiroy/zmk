@@ -43,8 +43,38 @@ static const struct bt_data zmk_ble_ad[] = {
 
 static bool is_connected = false;
 
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_PERIPHERAL_DIRECTED_ADV)
+static struct bt_le_adv_param adv_param;
+static bt_addr_le_t bond_addr;
+
+static void copy_last_bonded_addr(const struct bt_bond_info *info, void *data)
+{
+	bt_addr_le_copy(&bond_addr, &info->addr);
+}
+#endif
+
 static int start_advertising() {
-    return bt_le_adv_start(BT_LE_ADV_CONN, zmk_ble_ad, ARRAY_SIZE(zmk_ble_ad), NULL, 0);
+    int err;
+    #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_PERIPHERAL_DIRECTED_ADV)
+    bt_addr_le_copy(&bond_addr, BT_ADDR_LE_NONE);
+	bt_foreach_bond(BT_ID_DEFAULT, copy_last_bonded_addr, NULL);
+
+
+	if (bt_addr_le_cmp(&bond_addr, BT_ADDR_LE_NONE) != 0) {
+        char addr[BT_ADDR_LE_STR_LEN];
+		bt_addr_le_to_str(&bond_addr, addr, sizeof(addr));
+		printk("Direct advertising to %s\n", addr);
+
+		adv_param = *BT_LE_ADV_CONN_DIR_LOW_DUTY(&bond_addr);
+		adv_param.options |= BT_LE_ADV_OPT_DIR_ADDR_RPA;
+		err = bt_le_adv_start(&adv_param, zmk_ble_ad, ARRAY_SIZE(zmk_ble_ad), NULL, 0);
+	} else {
+		err = bt_le_adv_start(BT_LE_ADV_CONN, zmk_ble_ad, ARRAY_SIZE(zmk_ble_ad), NULL, 0);
+	}
+    #else
+        err = bt_le_adv_start(BT_LE_ADV_CONN, zmk_ble_ad, ARRAY_SIZE(zmk_ble_ad), NULL, 0);
+    #endif
+    return err;
 };
 
 static void connected(struct bt_conn *conn, uint8_t err) {
